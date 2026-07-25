@@ -1,0 +1,11 @@
+START:
+  LEFT: 0.5
+  RIGHT: 0.5
+
+SITE_A:
+  LEFT: 0.5
+  RIGHT: 0.5
+
+SITE_B:
+  LEFT: 0.5
+  RIGHT: 0.5
