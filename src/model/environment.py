@@ -1,4 +1,4 @@
-from model.distributions.state_transition import transition_ditribution
+from model.distributions.state_transition import transition_distribution
 from model.sets.states import State
 from dataclasses import dataclass
 from model.sets.actions import Action
@@ -33,7 +33,7 @@ class Environment:
         if action not in self.available_actions():
             raise ValueError("Invalid action.")
         old_state = self.state
-        distribution = transition_ditribution(state=old_state, action=action)
+        distribution = transition_distribution(state=old_state, action=action)
         new_state = sample_distribution(distribution = distribution, rng = self.rng)
         r = reward(state=old_state, action=action, new_state=new_state)
         self.state = new_state
