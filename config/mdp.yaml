@@ -1,0 +1,101 @@
+experiment:
+  seed: 42
+  num_episodes: 1000
+  max_steps: 100
+
+policy:
+  path: config/initial_policy.yaml
+
+logging:
+  directory: logs
+
+visualization:
+  step_delay_seconds: 0.05
+  host: 127.0.0.1
+  port: 8050
+  poll_interval_ms: 100
+  step_delay_slider:
+    min_seconds: 0.01
+    max_seconds: 1.0
+    step_seconds: 0.01
+    marks:
+      0.1: 0.1s
+      0.5: 0.5s
+      1.0: 1s
+      2.0: 2s
+  graph:
+    layout:
+      START: {x: 0, y: -600}
+      SITE_A: {x: 100, y: -200}
+      SITE_B: {x: 400, y: -200}
+      BASE: {x: 500, y: -600}
+      IMMOBILE: {x: 250, y: -400}
+      DESTROYED: {x: 250, y: -800}
+
+mdp:
+  transitions:
+    - state: START
+      action: LEFT
+      next_states:
+        SITE_A: 0.9
+        IMMOBILE: 0.1
+    - state: START
+      action: RIGHT
+      next_states:
+        BASE: 0.5
+        DESTROYED: 0.5
+    - state: SITE_A
+      action: LEFT
+      next_states:
+        START: 1.0
+    - state: SITE_A
+      action: RIGHT
+      next_states:
+        SITE_B: 0.8
+        IMMOBILE: 0.2
+    - state: SITE_B
+      action: LEFT
+      next_states:
+        SITE_A: 1.0
+    - state: SITE_B
+      action: RIGHT
+      next_states:
+        BASE: 1.0
+
+  rewards:
+    - state: START
+      action: LEFT
+      next_state: SITE_A
+      value: -1.0
+    - state: START
+      action: LEFT
+      next_state: IMMOBILE
+      value: -3.0
+    - state: START
+      action: RIGHT
+      next_state: BASE
+      value: 10.0
+    - state: START
+      action: RIGHT
+      next_state: DESTROYED
+      value: -10.0
+    - state: SITE_A
+      action: LEFT
+      next_state: START
+      value: -1.0
+    - state: SITE_A
+      action: RIGHT
+      next_state: SITE_B
+      value: -1.0
+    - state: SITE_A
+      action: RIGHT
+      next_state: IMMOBILE
+      value: -3.0
+    - state: SITE_B
+      action: LEFT
+      next_state: SITE_A
+      value: -1.0
+    - state: SITE_B
+      action: RIGHT
+      next_state: BASE
+      value: 10.0

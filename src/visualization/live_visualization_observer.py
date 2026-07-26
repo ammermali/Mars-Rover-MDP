@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from time import sleep
+from config.config_loader import load_config
 from model.sets.states import State
 from model.transition import Transition
 from visualization.control_state import VisualizationControlState
@@ -17,7 +18,7 @@ class LiveVisualizationObserver(EpisodeObserver):
     def __init__(self, state: VisualizationState | None = None, control_state: VisualizationControlState | None = None, renderer: Renderer | None = None) -> None:
         self.renderer = renderer
         self.state = state or VisualizationState()
-        self.control_state = control_state or VisualizationControlState()
+        self.control_state = control_state or VisualizationControlState(load_config().visualization.step_delay_seconds)
 
     def on_episode_started(self, episode_index: int) -> None:
         self.state.start_episode(episode_index)
@@ -36,4 +37,3 @@ class LiveVisualizationObserver(EpisodeObserver):
         self.state.finish_episode(episode_index, total_reward, steps, terminated, final_state)
         if self.renderer is not None:
             self.renderer.render_episode_finished(self.state)
-

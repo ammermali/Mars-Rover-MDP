@@ -2,7 +2,7 @@ from threading import Event, Lock
 
 
 class VisualizationControlState:
-    def __init__(self, step_delay_seconds: float = 0.05) -> None:
+    def __init__(self, step_delay_seconds: float) -> None:
         self._lock = Lock()
         self._start_requested = Event()
         self._step_delay_seconds = step_delay_seconds

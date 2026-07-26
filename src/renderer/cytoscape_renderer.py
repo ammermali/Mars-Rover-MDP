@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from threading import Lock, Thread
 from typing import Mapping
+from config.config_loader import load_config
 from dash import Dash, Input, Output, dcc, html
 import dash_cytoscape as cyto
 from renderer.graph_layout import NODE_POSITIONS
@@ -58,16 +59,18 @@ class CytoscapeRenderer(Renderer):
         graph_spec: GraphSpec | None = None,
         policy_table: Mapping[State, Mapping[Action, float]] | None = None,
         control_state: VisualizationControlState | None = None,
-        host: str = "127.0.0.1",
-        port: int = 8050,
-        poll_interval_ms: int = 100
+        host: str | None = None,
+        port: int | None = None,
+        poll_interval_ms: int | None = None
     ) -> None:
+        visualization_config = load_config().visualization
         self.graph_spec = graph_spec or build_graph_spec()
         self.policy_table = policy_table
-        self.control_state = control_state or VisualizationControlState()
-        self.host = host
-        self.port = port
-        self.poll_interval_ms = poll_interval_ms
+        self.control_state = control_state or VisualizationControlState(visualization_config.step_delay_seconds)
+        self.host = visualization_config.host if host is None else host
+        self.port = visualization_config.port if port is None else port
+        self.poll_interval_ms = visualization_config.poll_interval_ms if poll_interval_ms is None else poll_interval_ms
+        self.step_delay_slider = visualization_config.step_delay_slider
         self.store = RenderStateStore()
         self.app = self._build_app()
         self._thread: Thread | None = None
@@ -123,16 +126,11 @@ class CytoscapeRenderer(Renderer):
                                 html.Div(id="step-delay-value"),
                                 dcc.Slider(
                                     id="step-delay-slider",
-                                    min=0.01,
-                                    max=1.0,
-                                    step=0.01,
+                                    min=self.step_delay_slider.min_seconds,
+                                    max=self.step_delay_slider.max_seconds,
+                                    step=self.step_delay_slider.step_seconds,
                                     value=self.control_state.get_step_delay_seconds(),
-                                    marks={
-                                        0.1: "0.1s",
-                                        0.5: "0.5s",
-                                        1.0: "1s",
-                                        2.0: "2s"
-                                    }
+                                    marks=self.step_delay_slider.marks
                                 )
                             ],
                             className="controls", style={"marginBottom": "16px", "gap": "8px"}

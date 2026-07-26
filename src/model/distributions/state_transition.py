@@ -1,33 +1,11 @@
+from config.config_loader import load_mdp_config
 from model.sets.actions import Action
 from model.sets.states import State
 from model.distributions.sampler import sample_distribution
 import random
 from typing import Mapping
 
-# Transition probabilities
-TRANSITIONS: dict[tuple[State, Action], dict[State, float]] = {
-    (State.START, Action.LEFT): {
-        State.SITE_A : 0.9,
-        State.IMMOBILE: 0.1
-    },
-    (State.START, Action.RIGHT): {
-        State.BASE: 0.5,
-        State.DESTROYED: 0.5
-    },
-    (State.SITE_A, Action.LEFT): {
-        State.START: 1.0
-    },
-    (State.SITE_A, Action.RIGHT): {
-        State.SITE_B: 0.8,
-        State.IMMOBILE: 0.2
-    },
-    (State.SITE_B, Action.LEFT): {
-        State.SITE_A: 1.0
-    },
-    (State.SITE_B, Action.RIGHT): {
-        State.BASE: 1.0
-    }
-}
+TRANSITIONS: dict[tuple[State, Action], dict[State, float]] = load_mdp_config().transitions
 
 def transition_distribution(state: State, action: Action) -> Mapping[State, float]:
     if state.is_final():

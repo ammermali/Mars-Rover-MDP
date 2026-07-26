@@ -1,4 +1,4 @@
-from pathlib import Path
+from config.config_loader import load_config
 from model.environment import Environment
 from model.distributions.policy import Policy
 from model.episode_observer import EpisodeObserver, CompositeEpisodeObserver
@@ -8,21 +8,15 @@ from logger.logger_facade import LoggerFacade
 from logger.sinks import CompositeSink, ConsoleSink, JsonFileSink
 import random
 from uuid import uuid4
-from renderer.debug_renderer import DebugRenderer
 from renderer.cytoscape_renderer import CytoscapeRenderer
 from visualization.control_state import VisualizationControlState
 from visualization.visualization_state import VisualizationState
 from visualization.live_visualization_observer import LiveVisualizationObserver
 
-DEFAULT_POLICY_PATH = Path(__file__).parent.parent / "config" / "initial_policy.yaml"
-LOGS_DIR = Path(__file__).parent.parent / "logs"
-SEED = 42
-NUM_EPISODES = 1000
-MAX_STEPS = 100
-
 def main() -> None:
+    config = load_config()
     run_id = str(uuid4())
-    log_path = LOGS_DIR / f"{run_id}.json"
+    log_path = config.logging.directory / f"{run_id}.json"
     sink = CompositeSink([
         ConsoleSink(include_steps=False),
         JsonFileSink(log_path)
@@ -32,12 +26,23 @@ def main() -> None:
 
     try:
         policy = Policy()
-        policy.load_from_yaml(DEFAULT_POLICY_PATH)
-        visualization_control_state = VisualizationControlState(step_delay_seconds=0.05)
-        renderer = CytoscapeRenderer(policy_table=policy.get(), control_state=visualization_control_state)
+        policy.load_from_yaml(config.policy.path)
+        visualization_control_state = VisualizationControlState(step_delay_seconds=config.visualization.step_delay_seconds)
+        renderer = CytoscapeRenderer(
+            policy_table=policy.get(),
+            control_state=visualization_control_state,
+            host=config.visualization.host,
+            port=config.visualization.port,
+            poll_interval_ms=config.visualization.poll_interval_ms
+        )
         renderer.start()
         visualization_control_state.wait_for_simulation_start()
-        logger.run_started(seed=SEED, num_episodes=NUM_EPISODES, max_steps=MAX_STEPS, policy_path=DEFAULT_POLICY_PATH)
+        logger.run_started(
+            seed=config.experiment.seed,
+            num_episodes=config.experiment.num_episodes,
+            max_steps=config.experiment.max_steps,
+            policy_path=config.policy.path
+        )
         visualization_observer = LiveVisualizationObserver(
             state = VisualizationState(),
             renderer = renderer,
@@ -47,22 +52,34 @@ def main() -> None:
             LoggingEpisodeObserver(logger=logger),
             visualization_observer
         ])
-        rng = random.Random(SEED)
+        rng = random.Random(config.experiment.seed)
 
         total_reward = 0.0
         terminal_episodes = 0
         truncated_episodes = 0
 
-        for episode_index in range(NUM_EPISODES):
-            result = episode_runner(episode_index=episode_index, rng=rng, policy=policy, observer=observer, max_steps=MAX_STEPS)
+        for episode_index in range(config.experiment.num_episodes):
+            result = episode_runner(
+                episode_index=episode_index,
+                rng=rng,
+                policy=policy,
+                observer=observer,
+                max_steps=config.experiment.max_steps
+            )
             total_reward += result.total_reward
             if result.terminated:
                 terminal_episodes += 1
             else:
                 truncated_episodes += 1
 
-        average_reward = total_reward / NUM_EPISODES if NUM_EPISODES else 0.0
-        logger.run_finished(episodes=NUM_EPISODES, terminal_episodes=terminal_episodes, truncated_episodes=truncated_episodes, average_reward=average_reward, total_reward=total_reward)
+        average_reward = total_reward / config.experiment.num_episodes if config.experiment.num_episodes else 0.0
+        logger.run_finished(
+            episodes=config.experiment.num_episodes,
+            terminal_episodes=terminal_episodes,
+            truncated_episodes=truncated_episodes,
+            average_reward=average_reward,
+            total_reward=total_reward
+        )
     except Exception as error:
         logger.error(error)
         raise

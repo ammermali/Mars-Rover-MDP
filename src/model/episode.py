@@ -11,7 +11,7 @@ class EpisodeResult:
     total_reward: float
     terminated: bool
 
-def run_episode(environment: Environment, policy: Policy, max_steps: int = 100, observer: EpisodeObserver | None = None, episode_index: int = 0) -> EpisodeResult:
+def run_episode(environment: Environment, policy: Policy, max_steps: int, observer: EpisodeObserver | None = None, episode_index: int = 0) -> EpisodeResult:
     state = environment.reset()
     transitions: list[Transition] = []
     total_reward = 0.0
