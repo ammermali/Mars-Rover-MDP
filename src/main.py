@@ -1,13 +1,18 @@
 from pathlib import Path
 from model.environment import Environment
 from model.distributions.policy import Policy
-from model.episode_observer import EpisodeObserver
+from model.episode_observer import EpisodeObserver, CompositeEpisodeObserver
 from model.episode import EpisodeResult, run_episode
 from logger.episode_observer import LoggingEpisodeObserver
 from logger.logger_facade import LoggerFacade
 from logger.sinks import CompositeSink, ConsoleSink, JsonFileSink
 import random
 from uuid import uuid4
+from renderer.debug_renderer import DebugRenderer
+from renderer.cytoscape_renderer import CytoscapeRenderer
+from visualization.control_state import VisualizationControlState
+from visualization.visualization_state import VisualizationState
+from visualization.live_visualization_observer import LiveVisualizationObserver
 
 DEFAULT_POLICY_PATH = Path(__file__).parent.parent / "config" / "initial_policy.yaml"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -23,13 +28,25 @@ def main() -> None:
         JsonFileSink(log_path)
     ])
     logger = LoggerFacade(sink=sink, run_id=run_id)
-    observer = LoggingEpisodeObserver(logger)
+    renderer = None
 
     try:
-        logger.run_started(seed=SEED, num_episodes=NUM_EPISODES, max_steps=MAX_STEPS, policy_path=DEFAULT_POLICY_PATH)
-
         policy = Policy()
         policy.load_from_yaml(DEFAULT_POLICY_PATH)
+        visualization_control_state = VisualizationControlState(step_delay_seconds=0.05)
+        renderer = CytoscapeRenderer(policy_table=policy.get(), control_state=visualization_control_state)
+        renderer.start()
+        visualization_control_state.wait_for_simulation_start()
+        logger.run_started(seed=SEED, num_episodes=NUM_EPISODES, max_steps=MAX_STEPS, policy_path=DEFAULT_POLICY_PATH)
+        visualization_observer = LiveVisualizationObserver(
+            state = VisualizationState(),
+            renderer = renderer,
+            control_state = visualization_control_state
+        )
+        observer = CompositeEpisodeObserver([
+            LoggingEpisodeObserver(logger=logger),
+            visualization_observer
+        ])
         rng = random.Random(SEED)
 
         total_reward = 0.0
@@ -51,6 +68,8 @@ def main() -> None:
         raise
     finally:
         logger.close()
+        if renderer is not None:
+            renderer.close()
 
 
 def episode_runner(episode_index: int, rng: random.Random, policy: Policy, observer: EpisodeObserver, max_steps: int) -> EpisodeResult:
