@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from threading import Lock, Thread
 from typing import Mapping
 from config.config_loader import load_config
@@ -12,6 +12,7 @@ from visualization.control_state import VisualizationControlState
 from visualization.visualization_state import EdgeKey, VisualizationState
 from model.sets.actions import Action
 from model.sets.states import State
+from rl.live_training_observer import TrainingUpdate
 
 @dataclass(frozen=True)
 class RendererSnapshot:
@@ -26,6 +27,14 @@ class RendererSnapshot:
     visited_states: dict[State, int] = field(default_factory=dict)
     visited_edges: dict[EdgeKey, int] = field(default_factory=dict)
     outcome_counts: dict[State, int] = field(default_factory=dict)
+    training_episode: int = 0
+    training_total_episodes: int = 0
+    training_epsilon: float = 0.0
+    training_latest_reward: float | None = None
+    training_completed: bool = False
+    training_policy_table: dict[State, dict[Action, float]] = field(default_factory=dict)
+    training_q_values: dict[State, dict[Action, float]] = field(default_factory=dict)
+    training_convergence: tuple = ()
 
 class RenderStateStore:
     def __init__(self) -> None:
@@ -34,7 +43,8 @@ class RenderStateStore:
 
     def update(self, state: VisualizationState) -> None:
         with self._lock:
-            self._snapshot = RendererSnapshot(
+            self._snapshot = replace(
+                self._snapshot,
                 episode_index=state.episode_index,
                 step_index=state.step_index,
                 current_state=state.current_state,
@@ -45,7 +55,25 @@ class RenderStateStore:
                 state_path=list(state.state_path),
                 visited_states=dict(state.visited_states),
                 visited_edges=dict(state.visited_edges),
-                outcome_counts=dict(state.outcome_counts)
+                outcome_counts=dict(state.outcome_counts),
+            )
+
+    def update_training(self, update: TrainingUpdate) -> None:
+        with self._lock:
+            self._snapshot = replace(
+                self._snapshot,
+                training_episode=update.episode,
+                training_total_episodes=update.total_episodes,
+                training_epsilon=update.epsilon,
+                training_latest_reward=update.latest_reward,
+                training_completed=update.completed,
+                training_policy_table={
+                    state: dict(actions) for state, actions in update.policy_table.items()
+                },
+                training_q_values={
+                    state: dict(actions) for state, actions in update.q_values.items()
+                },
+                training_convergence=tuple(update.convergence),
             )
 
     def snapshot(self) -> RendererSnapshot:
@@ -61,7 +89,8 @@ class CytoscapeRenderer(Renderer):
         control_state: VisualizationControlState | None = None,
         host: str | None = None,
         port: int | None = None,
-        poll_interval_ms: int | None = None
+        poll_interval_ms: int | None = None,
+        start_label: str = "Start simulation",
     ) -> None:
         visualization_config = load_config().visualization
         self.graph_spec = graph_spec or build_graph_spec()
@@ -71,6 +100,7 @@ class CytoscapeRenderer(Renderer):
         self.port = visualization_config.port if port is None else port
         self.poll_interval_ms = visualization_config.poll_interval_ms if poll_interval_ms is None else poll_interval_ms
         self.step_delay_slider = visualization_config.step_delay_slider
+        self.start_label = start_label
         self.store = RenderStateStore()
         self.app = self._build_app()
         self._thread: Thread | None = None
@@ -90,6 +120,9 @@ class CytoscapeRenderer(Renderer):
     def render_episode_finished(self, state: VisualizationState) -> None:
         self.store.update(state)
 
+    def render_training_update(self, update: TrainingUpdate) -> None:
+        self.store.update_training(update)
+
     def close(self) -> None:
         pass
 
@@ -105,7 +138,7 @@ class CytoscapeRenderer(Renderer):
                             [
                                 html.Div(id="simulation-control-status"),
                                 html.Button(
-                                    "Start simulation",
+                                    self.start_label,
                                     id="start-simulation-button",
                                     n_clicks=0
                                 )
@@ -115,8 +148,8 @@ class CytoscapeRenderer(Renderer):
                         ),
                         html.Div(
                             [
-                                html.Div("CURRENT POLICY:", className="section-title"),
-                                html.Div(self._build_policy_matrix(), className="policy-table")
+                                html.Div(id="policy-heading", className="section-title"),
+                                html.Div(id="policy-matrix", children=self._build_policy_matrix(), className="policy-table")
                             ],
                             className="policy-panel",
                             style={"marginBottom": "16px"}
@@ -149,6 +182,25 @@ class CytoscapeRenderer(Renderer):
                                 html.Div(id="outcome-panel", className="outcomes")
                             ],
                             className="outcome-panel"
+                        ),
+                        html.Div(
+                            [
+                                html.Div("Learning progress", className="section-title"),
+                                html.Div(id="training-status", className="status"),
+                                dcc.Graph(
+                                    id="convergence-chart",
+                                    config={"displayModeBar": False},
+                                    style={"height": "230px"},
+                                ),
+                            ],
+                            className="training-panel",
+                        ),
+                        html.Div(
+                            [
+                                html.Div("Action values", className="section-title"),
+                                html.Div(id="q-value-matrix", className="policy-table"),
+                            ],
+                            className="q-value-panel",
                         )
                     ],
                     className="sidebar"
@@ -179,18 +231,28 @@ class CytoscapeRenderer(Renderer):
 
         @app.callback(
             Output("mdp-graph", "elements"),
+            Output("policy-heading", "children"),
+            Output("policy-matrix", "children"),
             Output("status-panel", "children"),
             Output("path-panel", "children"),
             Output("outcome-panel", "children"),
+            Output("training-status", "children"),
+            Output("q-value-matrix", "children"),
+            Output("convergence-chart", "figure"),
             Input("render-tick", "n_intervals")
         )
         def refresh(_: int):
             snapshot = self.store.snapshot()
             return (
                 self._build_elements(snapshot),
+                self._policy_heading(snapshot),
+                self._build_policy_matrix(snapshot.training_policy_table or self.policy_table),
                 self._build_status(snapshot),
                 self._build_state_path(snapshot),
-                self._build_outcome_counts(snapshot)
+                self._build_outcome_counts(snapshot),
+                self._build_training_status(snapshot),
+                self._build_q_value_matrix(snapshot),
+                self._build_convergence_chart(snapshot),
             )
 
         @app.callback(Output("step-delay-value", "children"), Input("step-delay-slider", "value"))
@@ -279,8 +341,9 @@ class CytoscapeRenderer(Renderer):
             for state in terminal_states
         ]
 
-    def _build_policy_matrix(self):
-        if self.policy_table is None:
+    def _build_policy_matrix(self, policy_table: Mapping[State, Mapping[Action, float]] | None = None):
+        table = self.policy_table if policy_table is None else policy_table
+        if table is None:
             return html.Div("Policy unavailable")
 
         rows = [
@@ -290,7 +353,7 @@ class CytoscapeRenderer(Renderer):
             )
         ]
         for state in State:
-            action_distribution = self.policy_table.get(state, {})
+            action_distribution = table.get(state, {})
             rows.append(
                 html.Tr(
                     [html.Td(self._display_name(state))]
@@ -301,6 +364,79 @@ class CytoscapeRenderer(Renderer):
                 )
             )
         return html.Table(rows)
+
+    def _policy_heading(self, snapshot: RendererSnapshot) -> str:
+        if snapshot.training_total_episodes:
+            return "Behavior policy (epsilon-greedy)"
+        return "Current policy"
+
+    def _build_training_status(self, snapshot: RendererSnapshot) -> list:
+        if snapshot.training_total_episodes == 0:
+            return [html.Div("Evaluation policy")]
+        phase = "Completed" if snapshot.training_completed else "Training"
+        latest_reward = "-" if snapshot.training_latest_reward is None else f"{snapshot.training_latest_reward:.2f}"
+        metrics = snapshot.training_convergence[-1] if snapshot.training_convergence else None
+        content = [
+            html.Div(f"{phase}: {snapshot.training_episode}/{snapshot.training_total_episodes}"),
+            html.Div(f"Epsilon: {snapshot.training_epsilon:.3f}"),
+            html.Div(f"Latest reward: {latest_reward}"),
+        ]
+        if metrics is not None:
+            content.extend(
+                [
+                    html.Div(f"Window reward: {metrics.average_reward:.2f}"),
+                    html.Div(f"Base rate: {metrics.base_rate:.1%}"),
+                ]
+            )
+        return content
+
+    def _build_q_value_matrix(self, snapshot: RendererSnapshot):
+        if not snapshot.training_q_values:
+            return "-"
+        rows = [html.Tr([html.Th("State")] + [html.Th(action.name) for action in Action])]
+        for state in State:
+            values = snapshot.training_q_values.get(state, {})
+            rows.append(
+                html.Tr(
+                    [html.Td(self._display_name(state))]
+                    + [html.Td("-" if action not in values else f"{values[action]:.2f}") for action in Action]
+                )
+            )
+        return html.Table(rows)
+
+    def _build_convergence_chart(self, snapshot: RendererSnapshot) -> dict:
+        metrics = snapshot.training_convergence
+        return {
+            "data": [
+                {
+                    "type": "scatter",
+                    "mode": "lines+markers",
+                    "name": "Reward",
+                    "x": [metric.episode for metric in metrics],
+                    "y": [metric.average_reward for metric in metrics],
+                    "line": {"color": "#38bdf8"},
+                },
+                {
+                    "type": "scatter",
+                    "mode": "lines+markers",
+                    "name": "Base rate",
+                    "x": [metric.episode for metric in metrics],
+                    "y": [metric.base_rate for metric in metrics],
+                    "yaxis": "y2",
+                    "line": {"color": "#facc15"},
+                },
+            ],
+            "layout": {
+                "paper_bgcolor": "#0b1020",
+                "plot_bgcolor": "#111827",
+                "font": {"color": "#e5e7eb", "size": 10},
+                "margin": {"l": 36, "r": 36, "t": 20, "b": 32},
+                "legend": {"orientation": "h", "y": 1.12},
+                "xaxis": {"title": "Episode", "gridcolor": "#374151"},
+                "yaxis": {"title": "Reward", "gridcolor": "#374151"},
+                "yaxis2": {"title": "Base", "overlaying": "y", "side": "right", "range": [0, 1]},
+            },
+        }
 
     def _state_id(self, state: State) -> str:
         return state.name

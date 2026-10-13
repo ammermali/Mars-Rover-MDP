@@ -5,6 +5,12 @@ import random
 from pathlib import Path
 from typing import Mapping
 import yaml
+from typing import Protocol
+
+
+class ActionPolicy(Protocol):
+    def sample_action(self, state: State, rng: random.Random) -> Action:
+        ...
 
 
 class Policy:
@@ -14,7 +20,7 @@ class Policy:
         self.table = table
 
     # Load policy from yaml file
-    def load_from_yaml(self, path: str | Path):
+    def load_from_yaml(self, path: str | Path) -> None:
         with open(path, "r", encoding="utf-8") as file:
             raw_policy = yaml.safe_load(file)
             self.table = {
@@ -33,5 +39,5 @@ class Policy:
             raise ValueError("Policy not defined.") from err
         return sample_distribution(action_distribution, rng)
 
-    def get(self):
+    def get(self) -> Mapping[State, Mapping[Action, float]]:
         return self.table

@@ -6,19 +6,33 @@ experiment:
 policy:
   path: config/initial_policy.yaml
 
+rl:
+  alpha: 0.1
+  gamma: 0.95
+  epsilon_start: 1.0
+  epsilon_min: 0.05
+  epsilon_decay: 0.9997
+  training_episodes: 20000
+  visual_training_episodes: 5000
+  evaluation_episodes: 10000
+  metrics_interval: 100
+  policy_output_path: artifacts/learned_policy.yaml
+  report_output_path: artifacts/training_report.json
+
 logging:
   directory: logs
 
 visualization:
-  step_delay_seconds: 0.05
+  step_delay_seconds: 0.01
   host: 127.0.0.1
   port: 8050
   poll_interval_ms: 100
   step_delay_slider:
-    min_seconds: 0.01
+    min_seconds: 0.0
     max_seconds: 1.0
     step_seconds: 0.01
     marks:
+      0.0: 0s
       0.1: 0.1s
       0.5: 0.5s
       1.0: 1s

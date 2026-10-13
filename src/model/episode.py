@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from model.transition import Transition
-from model.distributions.policy import Policy
+from model.distributions.policy import ActionPolicy
 from model.environment import Environment
 from model.episode_observer import EpisodeObserver
 
@@ -11,7 +11,7 @@ class EpisodeResult:
     total_reward: float
     terminated: bool
 
-def run_episode(environment: Environment, policy: Policy, max_steps: int, observer: EpisodeObserver | None = None, episode_index: int = 0) -> EpisodeResult:
+def run_episode(environment: Environment, policy: ActionPolicy, max_steps: int, observer: EpisodeObserver | None = None, episode_index: int = 0) -> EpisodeResult:
     state = environment.reset()
     transitions: list[Transition] = []
     total_reward = 0.0

@@ -28,6 +28,21 @@ class PolicyConfig:
 
 
 @dataclass(frozen=True)
+class RLConfig:
+    alpha: float
+    gamma: float
+    epsilon_start: float
+    epsilon_min: float
+    epsilon_decay: float
+    training_episodes: int
+    visual_training_episodes: int
+    evaluation_episodes: int
+    metrics_interval: int
+    policy_output_path: Path
+    report_output_path: Path
+
+
+@dataclass(frozen=True)
 class LoggingConfig:
     directory: Path
 
@@ -60,6 +75,7 @@ class MdpConfig:
 class AppConfig:
     experiment: ExperimentConfig
     policy: PolicyConfig
+    rl: RLConfig
     logging: LoggingConfig
     visualization: VisualizationConfig
     mdp: MdpConfig
@@ -77,6 +93,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     return AppConfig(
         experiment=_load_experiment_config(raw_config["experiment"]),
         policy=_load_policy_config(raw_config["policy"]),
+        rl=_load_rl_config(raw_config["rl"]),
         logging=_load_logging_config(raw_config["logging"]),
         visualization=_load_visualization_config(raw_config["visualization"]),
         mdp=_load_mdp_config(raw_config["mdp"]),
@@ -97,6 +114,38 @@ def _load_experiment_config(raw: Mapping[str, Any]) -> ExperimentConfig:
 
 def _load_policy_config(raw: Mapping[str, Any]) -> PolicyConfig:
     return PolicyConfig(path=_project_path(raw["path"]))
+
+
+def _load_rl_config(raw: Mapping[str, Any]) -> RLConfig:
+    config = RLConfig(
+        alpha=float(raw["alpha"]),
+        gamma=float(raw["gamma"]),
+        epsilon_start=float(raw["epsilon_start"]),
+        epsilon_min=float(raw["epsilon_min"]),
+        epsilon_decay=float(raw["epsilon_decay"]),
+        training_episodes=int(raw["training_episodes"]),
+        visual_training_episodes=int(raw["visual_training_episodes"]),
+        evaluation_episodes=int(raw["evaluation_episodes"]),
+        metrics_interval=int(raw["metrics_interval"]),
+        policy_output_path=_project_path(raw["policy_output_path"]),
+        report_output_path=_project_path(raw["report_output_path"]),
+    )
+    if not 0 < config.alpha <= 1:
+        raise ValueError("RL alpha must be in (0, 1].")
+    if not 0 <= config.gamma <= 1:
+        raise ValueError("RL gamma must be in [0, 1].")
+    if not 0 <= config.epsilon_min <= config.epsilon_start <= 1:
+        raise ValueError("RL epsilon values must satisfy 0 <= min <= start <= 1.")
+    if not 0 < config.epsilon_decay <= 1:
+        raise ValueError("RL epsilon_decay must be in (0, 1].")
+    if (
+        config.training_episodes <= 0
+        or config.visual_training_episodes <= 0
+        or config.evaluation_episodes <= 0
+        or config.metrics_interval <= 0
+    ):
+        raise ValueError("RL episode counts and metrics_interval must be positive.")
+    return config
 
 
 def _load_logging_config(raw: Mapping[str, Any]) -> LoggingConfig:
